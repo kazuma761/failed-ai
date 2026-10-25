@@ -12,6 +12,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
+from backend import telemetry
 from backend.agents import aggregator, ci_fixer, gemini_checker, specialists, triage
 from backend.config import settings
 from backend.events import bus
@@ -249,8 +250,17 @@ pipeline = build_graph()
 async def run_review(ctx: TaskContext) -> Review:
     _span(ctx, "pr", "span.start", repo=ctx.repo_full_name, pr=ctx.pr_number, head_sha=ctx.head_sha,
           enforcer=enforcer_label(ctx.mode))
+    telemetry.review_start(ctx.review_id, ORCHESTRATOR,
+                           f"Review {ctx.repo_full_name} PR #{ctx.pr_number} at {ctx.head_sha} ({ctx.mode.value})")
+    outcome, summary = "failed", ""
     try:
         state = await pipeline.ainvoke({"ctx": ctx, "findings_by_agent": {}})
+        outcome, summary = "success", f"verdict {state['review'].verdict}, {len(state['review'].findings)} findings"
         return state["review"]
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
     finally:
+        telemetry.review_end(ctx.review_id, ORCHESTRATOR, outcome, summary)
+        telemetry.flush()
         _span(ctx, "pr", "span.end")

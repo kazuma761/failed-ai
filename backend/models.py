@@ -15,7 +15,7 @@ class Mode(str, Enum):
 
 
 class Enforcer(str, Enum):
-    AGNTID = "AGNTID"
+    FAILPROOFAI = "FAILPROOFAI"
     LOCAL_POLICY = "LOCAL_POLICY"
     NONE = "NONE"
 

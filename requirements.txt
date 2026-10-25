@@ -13,5 +13,4 @@ pyyaml==6.0.3
 ruff==0.16.10
 uvicorn==0.54.0
 websockets==16.1.1
-# AgntID SDK: not on PyPI, pinned to the commit its signatures were checked against
-agntid-sdk @ git+https://github.com/AGNTID-AI/agntid-python.git@f4fcd2fe476f0c4dcf800e498530b7042b830f6b
+failproofai-sdk==0.0.1b6

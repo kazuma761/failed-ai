@@ -9,10 +9,9 @@ import asyncio
 import json
 import logging
 import time
-
-import httpx
 from typing import Any
 
+import httpx
 from fastapi import (
     BackgroundTasks,
     FastAPI,
@@ -73,10 +72,6 @@ async def _context_for_pr(repo: str, number: int, mode: Mode, prefix: str = "") 
         res = await gateway.call(ORCHESTRATOR, probe, "get_pull_request", {"repo": repo, "pull_number": number})
     except UpstreamError as exc:
         raise HTTPException(502, f"could not load the pull request: {exc}") from exc
-    finally:
-        closer = getattr(gateway, "close_review", None)
-        if closer:
-            await closer(probe)
     if isinstance(res, Denial):
         raise HTTPException(403, f"access control refused the pull request lookup: {res.reason}")
     if not isinstance(res.data, dict) or "head" not in res.data:
@@ -212,10 +207,6 @@ async def replay(agent: str = "prguard-security", pr: int = 2) -> dict[str, Any]
 @app.post("/reset")
 async def reset() -> dict[str, Any]:
     """Clear the event feed and, with the mock upstream, undo recorded writes."""
-    for ctx in list(contexts.values()):
-        closer = getattr(gateway_for(ctx.mode), "close_review", None)
-        if closer:  # AgntID: close the review's delegations and task
-            await closer(ctx)
     bus.clear()
     contexts.clear()
     reviews.clear()

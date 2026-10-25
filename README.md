@@ -5,31 +5,37 @@ An AI pull-request reviewer built to stay safe when a pull request turns hostile
 > In the CodeRabbit case, one PR led to write access on a million repos.
 > Against PRGuard, the worst case is one comment on one PR.
 
-Built for the AgntID Hackathon (Devfolio, Bengaluru).
+Every GitHub call an agent makes is checked by
+[FailproofAI](https://befailproof.ai): its PreToolUse hook runs PRGuard's
+policy on the call and records the decision.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  PR[Pull request] --> O[Orchestrator + Sandbox]
+  O --> S[5 specialist agents]
+  S --> A[Aggregator] --> C[Checker] --> H[Human gate] --> P[Post review]
+  O & S & P -. every GitHub call .-> G[ToolGateway]
+  G --> F{{FailproofAI PreToolUse hook<br/>PRGuard policy}}
+  F -- allow --> M[PRGuard GitHub MCP server<br/>holds the only token] --> GH[(GitHub)]
+  F -- deny + reason --> G
+  F -. hook activity .-> L[Local dashboard :8020 / FailproofAI Cloud]
+  G -. SDK session events .-> L
+```
+
+The policy is default deny: each role gets only its own tools, calls are
+pinned to the task's repository, PR and commit, secret paths are refused,
+merge, push and file writes are never allowed, and APPROVE needs a human.
+FailproofAI records every allow and deny as hook activity (local dashboard on
+port 8020, and FailproofAI Cloud when the machine is connected). The FailproofAI
+SDK also reports each review as a session.
 
 ## Demo
 
-A guarded review, then a hijacked agent's attack steps being denied by AgntID, then the review on GitHub.
-
-![PRGuard demo](docs/prguard-demo.gif)
-
-## Screenshots
-
-A guarded review: every GitHub call allowed by AgntID, under each agent's own identity.
-
-![Guarded review in Mission Control](docs/screenshots/01-guarded-review.jpg)
-
-The assume-breach replay: six attack steps denied by AgntID, each with its reason.
-
-![Replay denied by AgntID](docs/screenshots/02-replay-denied-by-agntid.jpg)
-
-One of the policies in the AgntID portal: custom Rego that pins the repository and blocks secret paths.
-
-![AgntID Rego policy](docs/screenshots/03-agntid-rego-policy.jpg)
-
-The review as posted on the real pull request.
-
-![Review posted on GitHub](docs/screenshots/04-review-posted-on-github.jpg)
+New recordings and screenshots with FailproofAI are TODO. The GIF and
+screenshots in `docs/` come from the earlier AgntID build and are kept only
+for history.
 
 ## The threat
 
@@ -48,11 +54,13 @@ unlocked everything.
    host environment, a read-only filesystem, no capabilities and a non-root
    user. If Docker is unavailable, PR code is not run at all.
 2. **No keys in agents.** Agents never import a GitHub or MCP client. Every
-   GitHub action goes through a `ToolGateway`. With AgntID, the reviewer
-   process holds no GitHub token.
+   GitHub action goes through a `ToolGateway`. The GitHub token lives only in
+   PRGuard's own MCP server.
 3. **Per-action rules.** Default deny. Each agent role may call only its own
    tools, only on the repo, PR and commit of the current task. Merge and push
-   are never allowed. APPROVE needs a human, for that one PR.
+   are never allowed. APPROVE needs a human, for that one PR. With
+   `ENFORCER=FAILPROOFAI` these rules run as a FailproofAI policy
+   (`failproofai/prguard-policies.mjs`) in the PreToolUse hook.
 
 ## Two modes, same code
 
@@ -61,29 +69,36 @@ unlocked everything.
 | PR code runs | subprocess on the host with a fake "victim" env | locked Docker sandbox |
 | GitHub access | `DirectGateway`: every tool, no checks | policy decides each call |
 | Hostile PR | canary panel lists the env var names it could read | canary panel stays at 0 |
-| Assume-breach replay | 6 of 8 go through on real GitHub | 6 of 8 denied by AgntID with reasons |
+| Assume-breach replay | 6 of 8 went through on real GitHub | 7 of 8 denied, each with a reason (offline tests) |
 
 ## Status
 
-Verified on 10 October 2026 against a real AgntID runtime and a real GitHub
-repository ([prguard-demo-target](https://github.com/kazuma761/prguard-demo-target)):
+FailproofAI enforcement is **built and tested offline, not yet verified live**.
+The operator still has to run `scripts/failproofai_setup.sh` and
+`scripts/failproofai_check.py` (see [FailproofAI](#failproofai) below).
 
-- Real pull requests were reviewed end to end and the reviews posted to GitHub,
-  with every GitHub call checked by the AgntID runtime.
-- The assume-breach replay: AgntID stopped six of eight attack steps, each with
-  its own reason. Without AgntID, six of eight went through, including a real
+Shown on a real GitHub repository
+([prguard-demo-target](https://github.com/kazuma761/prguard-demo-target))
+with the earlier AgntID build:
+
+- Real pull requests reviewed end to end, with the reviews posted to GitHub.
+- UNSAFE mode: six of eight assume-breach steps went through, including a real
   merge and a real push.
 - Reviews take about 15 seconds and half a cent on cheap models
   (`openai/gpt-oss-120b` reviewers, `google/gemini-2.5-flash-lite` checker).
 
+What the offline tests show for GUARDED mode with PRGuard's policy: seven of
+eight replay steps denied (only the legitimate read is allowed), including the
+comment on a different PR, and APPROVE allowed only after a human approves,
+for that PR only. `tests/test_failproofai_policy.py` checks that the
+FailproofAI policy decides exactly like the Python policy engine.
+
 Limits, stated plainly:
 
-- A hijacked agent can still comment on a different pull request in the same
-  repository. Policies pin the repository, not the PR number, and the runtime's
-  intent check reported "skipped" throughout.
-- Human approval is not wired through AgntID; agents are denied APPROVE always.
-- The GitHub token is held by PRGuard's own MCP server, because AgntID's GitHub
-  credential type is not available yet.
+- None of this has run through a live FailproofAI install yet.
+- FailproofAI fails open when a policy is missing or throws, so PRGuard probes
+  the hook first: if a merge is not denied by PRGuard's own rule, every call
+  fails closed until the backend restarts.
 - With no keys configured, PRGuard falls back to an offline mock of GitHub, a
   deterministic mock reviewer and a local policy stand-in, each labelled as
   such in the UI. `TRIAGE` with TypeSafe Jev is built but was never run live.
@@ -91,7 +106,7 @@ Limits, stated plainly:
   agents get no shell and no token.
 
 See [docs/SUBMISSION.md](docs/SUBMISSION.md) for the submission write-up and
-[AGENTS.md](AGENTS.md) for the AgntID setup notes.
+[AGENTS.md](AGENTS.md) for the FailproofAI control matrix.
 
 ## CI/CD: the CI fixer
 
@@ -192,51 +207,47 @@ fine-grained `GITHUB_PAT_UNSAFE` limited to those repos, and
 `docker compose up -d`. GitHub will not let an account approve or request
 changes on its own PR, so those need a second account or a GitHub App.
 
-### AgntID
+### FailproofAI
 
-1. `./scripts/agntid_runtime.sh up` starts the customer-hosted runtime
-   (public images; the first start downloads a 900 MB intent model).
-2. Open http://localhost:18080 and paste your bootstrap token there yourself.
-   It is single use. Never put it in a file, a command or a chat.
-3. In the AgntID portal: wait for the runtime's setup checks, review its
-   protection profile, attach the GitHub MCP server, and add policies that
-   mirror `prguard.policy.yaml` (merge and file writes denied, reviewers
-   read-only, APPROVE gated on review).
-4. `.venv/bin/python scripts/agntid_check.py` shows which GitHub tools the
-   runtime exposes and how they map. When it prints READY, set
-   `ENFORCER=AGNTID` and restart the backend.
+The gateway runs the failproofai binary as a PreToolUse hook once per tool
+call (`--hook PreToolUse`), naming the tool `mcp__prguard__<tool>`. The task
+(agent id, repo, PR, commit, human approval) comes from the backend, never
+from the agent. Empty output means allow; a deny comes back with PRGuard's
+rule name and reason. A timeout, a missing binary or unreadable output fails
+closed and is not labelled a FailproofAI decision.
 
-How PRGuard uses AgntID: one root task per review (opened by
-`prguard-orchestrator` for `gh:<author>`, with the prohibitions stated as plain
-sentences so AgntID records them as constraints), one delegation per specialist
-with its own agent id, delegated intent and tool allowlist, and approval
-evidence bound to the exact APPROVE call when a human approves. This follows
-the SDK's Deep Agents example. Still to confirm on a live runtime: the tool
-names the proxy exposes, whether repo and PR scoping come from policy
-constraints or intent validation, and whether that approval evidence is enough.
+Operator steps (coding agents in this repo are blocked from running them):
 
-Of AgntID's credential types, `GITHUB_APP` (short-lived, per-repo tokens minted
-by the runtime) is the real fix for "one key unlocks everything", but it is
-marked coming soon. Until then the GitHub token lives in the MCP server
-configuration inside the runtime, which still keeps it out of the agents.
+1. Install the local half: `npm install -g failproofai` (Node 20.9+).
+2. `./scripts/failproofai_setup.sh` copies `failproofai/prguard-policies.mjs`
+   to `.failproofai/policies/` (gitignored), where failproofai loads it.
+3. Optional, for FailproofAI Cloud (app.befailproof.ai): run the interactive
+   `config` wizard of the failproofai CLI, which installs the daemon, and
+   connect with a one-time token you paste yourself.
+4. `.venv/bin/python scripts/failproofai_check.py` until it prints READY, then
+   set `ENFORCER=FAILPROOFAI` in `.env` and restart the backend.
+   `FAILPROOFAI_BIN` overrides the binary path (default `failproofai`).
+5. Run a review and the replay in GUARDED mode, then find the decisions in the
+   local dashboard (port 8020, Policies, Activity) and in Cloud.
 
 ## Layout
 
 ```
 backend/
   main.py              FastAPI: /review /webhook /approve /mode /replay /reset /ws
-  gateway/             ToolGateway: direct (UNSAFE), local_policy (stand-in), agntid_gw, policy engine, tool map
+  gateway/             ToolGateway: direct (UNSAFE), local_policy (stand-in), failproofai_gw, policy engine, tool map
   policies/            prguard.policy.yaml
+  telemetry.py         FailproofAI SDK sessions (no-op without the SDK)
   sandbox/             Dockerfile, credential-free checkout, check runner
   agents/              llm (OpenRouter/Anthropic/Gemini), triage (Jev), prompts, specialists, ci_fixer, aggregator, checker
   orchestrator/        LangGraph pipeline
   replay/              assume-breach replay
 prguard_mcp/           PRGuard's own 13-tool GitHub MCP server; the only place the GitHub token lives
 canary_listener/       localhost listener for the canary
-agntid/                vendored AgntID runtime compose file
+failproofai/           prguard-policies.mjs: the same rules as a FailproofAI policy
 demo_target/           demo app plus prs/01_clean, 02_hostile and 03_ci_failure
 frontend/              Mission Control (React, React Flow)
-scripts/               dev, smoke, review_once, agntid_runtime, agntid_check, setup_demo_repo, reset_demo
+scripts/               dev, smoke, review_once, failproofai_setup, failproofai_check, setup_demo_repo, reset_demo
 ```
 
 Differences from the original plan:
@@ -263,4 +274,5 @@ multi-repo support, cost dashboards.
   Pull-Request Review Agent" by Ayush Singh. The "maker is never checker" and
   "gates are computed, not narrated" rules come from Antern's Genesis study.
 - Threat model from Kudelski Security's research on CodeRabbit.
-- Access control by [AgntID](https://agntid.ai).
+- Access control by [FailproofAI](https://befailproof.ai). An earlier build
+  used AgntID.

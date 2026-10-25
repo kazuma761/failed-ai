@@ -36,10 +36,9 @@ class Settings:
     # Replay identical LLM requests from disk: deterministic demos, no repeat cost.
     llm_cache: bool = field(default_factory=lambda: _env("LLM_CACHE", "1") not in ("0", "false", "no"))
 
-    # LOCAL_POLICY (stand-in) | AGNTID. Only used in GUARDED mode.
+    # LOCAL_POLICY (stand-in) | FAILPROOFAI. Only used in GUARDED mode.
     enforcer: str = field(default_factory=lambda: _env("ENFORCER", "LOCAL_POLICY").upper())
-    agntid_proxy_url: str = field(default_factory=lambda: _env("AGNTID_PROXY_URL", "http://localhost:8082/mcp"))
-    agntid_access_token: str = field(default_factory=lambda: _env("AGNTID_ACCESS_TOKEN"))
+    failproofai_bin: str = field(default_factory=lambda: _env("FAILPROOFAI_BIN", "failproofai"))
 
     # mcp = real GitHub MCP server, mock = offline fixtures from demo_target/.
     upstream: str = field(default_factory=lambda: _env("UPSTREAM", "mock").lower())

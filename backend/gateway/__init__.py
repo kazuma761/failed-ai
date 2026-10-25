@@ -7,6 +7,7 @@ from functools import lru_cache
 from backend.config import settings
 from backend.gateway.base import ToolGateway
 from backend.gateway.direct import DirectGateway
+from backend.gateway.failproofai_gw import FailproofAIGateway
 from backend.gateway.local_policy import LocalPolicyGateway
 from backend.gateway.upstream import McpUpstream, MockUpstream, Upstream
 from backend.models import Mode
@@ -26,13 +27,9 @@ def _unsafe_upstream() -> Upstream:
 
 @lru_cache
 def _guarded_gateway() -> ToolGateway:
-    if settings.enforcer == "AGNTID":
-        from backend.gateway.agntid_gw import AgntIDGateway
-
-        return AgntIDGateway()
-    # Stand-in. With a real GitHub MCP server the stand-in still needs the token
-    # to forward allowed calls; only the AgntID path is truly token-free.
     upstream = mock_upstream() if settings.upstream == "mock" else McpUpstream(settings.github_mcp_url)
+    if settings.enforcer == "FAILPROOFAI":
+        return FailproofAIGateway(upstream)
     return LocalPolicyGateway(upstream)
 
 
@@ -46,7 +43,7 @@ def gateway_for(mode: Mode) -> ToolGateway:
 
 
 def enforcer_label(mode: Mode) -> str:
-    """What the UI badge should say. Never claims AgntID unless AgntID decides."""
+    """What the UI badge should say. Never claims FailproofAI unless FailproofAI decides."""
     if mode is Mode.UNSAFE:
         return "NONE"
-    return "AGNTID" if settings.enforcer == "AGNTID" else "LOCAL POLICY (stand-in)"
+    return "FAILPROOFAI" if settings.enforcer == "FAILPROOFAI" else "LOCAL POLICY (stand-in)"

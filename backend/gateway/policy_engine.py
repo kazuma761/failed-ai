@@ -36,14 +36,22 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
         else:
             out += re.escape(pattern[i])
             i += 1
-    return re.compile(f"^{out}$")
+    # Case-insensitive: `x.PEM` is as secret as `x.pem`.
+    return re.compile(f"^{out}$", re.IGNORECASE)
+
+
+# The path goes into the GitHub URL as is: `%2Eenv` decodes to `.env`, `?ref=` overrides the pinned ref.
+_UNSAFE_PATH = re.compile(r"[%?#\\\x00-\x1f\x7f]")
 
 
 def path_denied(path: str, patterns: list[str]) -> str | None:
     """Return the pattern that blocks `path`, if any."""
-    clean = path.strip().lstrip("/")
-    # Refuse traversal outright rather than trying to normalise it.
-    if ".." in clean.split("/"):
+    # Refuse URL-significant characters and traversal outright rather than trying to normalise them.
+    if _UNSAFE_PATH.search(path):
+        return "unsafe characters"
+    clean = path.strip(" /")
+    # httpx collapses `.` and `//` before sending, so `.env/.` would read `.env`.
+    if any(seg in ("", ".", "..") for seg in clean.split("/")):
         return ".."
     basename = clean.rsplit("/", 1)[-1]
     for pattern in patterns:
@@ -51,6 +59,15 @@ def path_denied(path: str, patterns: list[str]) -> str | None:
         if rx.match(clean) or ("/" not in pattern and rx.match(basename)):
             return pattern
     return None
+
+
+def query_qualifier(query: str, qualifiers: list[str]) -> str | None:
+    """Return the GitHub search qualifier (e.g. `repo`) used in `query`, if it is one of `qualifiers`."""
+    if not qualifiers:
+        return None
+    # Explicit ASCII boundary, not \b: Python's \b is Unicode-aware and JS's is not.
+    match = re.search(rf"(?:^|[^A-Za-z0-9_])({'|'.join(map(re.escape, qualifiers))}):", query, re.IGNORECASE)
+    return match.group(1).lower() if match else None
 
 
 class PolicyEngine:
@@ -108,6 +125,10 @@ class PolicyEngine:
             blocked = path_denied(str(args.get("path", "")), rule.get("deny_paths") or []) if "path" in args else None
             if blocked:
                 return PolicyDecision(False, f"path {args['path']} matches denied pattern {blocked}", name)
+
+            qualifier = query_qualifier(str(args.get("query", "")), rule.get("deny_qualifiers") or [])
+            if qualifier:
+                return PolicyDecision(False, f"query uses the search qualifier {qualifier}:", name)
 
             if rule.get("requires") == "human_approved" and not ctx.human_approved:
                 near_miss = "requires human approval for this task"

@@ -1,7 +1,8 @@
 # PRGuard access policy — human-readable intent.
 #
-# Evaluated locally by LocalPolicyGateway (the stand-in) and to be translated
-# into AgntID's own policy format once we have runtime access.
+# Evaluated locally by LocalPolicyGateway (the stand-in), and by FailproofAI
+# through failproofai/prguard-policies.mjs, a JS mirror of this file kept in
+# sync by tests/test_failproofai_policy.py. Change both together.
 #
 # Tool names are PRGuard's logical names (see backend/gateway/toolmap.py), so
 # the policy does not change when the GitHub MCP server renames a tool.
@@ -34,6 +35,8 @@ profiles:
         deny_paths: [".env*", "**/secrets/**", "**/*.pem", "**/*.key"]
       - tool: search_code
         where: { repo: "{task.repo}" }
+        # The server appends repo:{task.repo}; a second qualifier in the query would widen the search.
+        deny_qualifiers: [repo, org, user, owner]
 
 roles:
   prguard-orchestrator: *reviewer   # build_context: fetch the PR, nothing else

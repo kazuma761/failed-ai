@@ -12,3 +12,4 @@ agntid/.env
 .demo_baseline
 !demo_target/.env
 .claude/
+.failproofai/

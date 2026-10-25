@@ -2,13 +2,13 @@
 and CI fixer could ever want, and nothing else.
 
 Why our own server instead of GitHub's ~90-tool one:
-  - the GitHub token lives here, on the host, so neither the agents nor the
-    AgntID runtime ever hold it;
-  - AgntID attaches it by URL (Remote HTTP), with a small, stable tool catalog
-    to classify and write policies for.
+  - the GitHub token lives here, on the host, so neither the agents nor
+    FailproofAI ever hold it;
+  - a small, stable tool catalog that PRGuard's FailproofAI policy can name
+    tool by tool.
 
 It deliberately includes dangerous tools (merge, push, file write/delete):
-those are what the "before" half of the demo abuses and what AgntID blocks in
+those are what the "before" half of the demo abuses and what FailproofAI blocks in
 the "after" half. The server itself enforces nothing.
 
     .venv/bin/python -m prguard_mcp.server        # http://127.0.0.1:8090/mcp
@@ -179,9 +179,8 @@ async def delete_file(owner: str, repo: str, path: str, message: str, branch: st
 
 
 if __name__ == "__main__":
-    # Localhost only. Docker Desktop still lets the AgntID runtime container reach it
-    # as http://host.docker.internal:8090/mcp.
+    # Localhost only: the backend's ToolGateway is the only client.
     # Stateless: every request stands alone, so a client holding an old session id
-    # (seen live with the AgntID runtime after a policy sync) keeps working.
+    # keeps working.
     mcp.run(transport="http", host=os.environ.get("PRGUARD_MCP_HOST", "127.0.0.1"),
             port=int(os.environ.get("PRGUARD_MCP_PORT", "8090")), show_banner=False, stateless_http=True)

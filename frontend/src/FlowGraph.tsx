@@ -100,7 +100,7 @@ export default function FlowGraph({ events, mode, enforcer }: { events: Ev[]; mo
   }, [events]);
 
   const guarded = mode === "GUARDED";
-  const gateLabel = !guarded ? "NO GATE" : enforcer.startsWith("AGNTID") ? "AgntID" : "LOCAL POLICY";
+  const gateLabel = !guarded ? "NO GATE" : enforcer.startsWith("FAILPROOFAI") ? "FailproofAI" : "LOCAL POLICY";
   const recent = (at: number) => now - at < FLASH_MS;
 
   const hitlWaiting = events.some((e) => e.type === "hitl.waiting") && !events.some((e) => e.type === "hitl.approved");
@@ -118,7 +118,7 @@ export default function FlowGraph({ events, mode, enforcer }: { events: Ev[]; mo
     hitl: { label: "HITL GATE", tone: hitlWaiting ? "warn" : undefined },
     gate: {
       label: gateLabel,
-      sub: !guarded ? "broad token · no checks" : enforcer.startsWith("AGNTID") ? "runtime policy" : "stand-in",
+      sub: !guarded ? "broad token · no checks" : enforcer.startsWith("FAILPROOFAI") ? "PreToolUse policy" : "stand-in",
       tone: !guarded ? "deny" : "gate",
       shake: recent(lastDeny) ? lastDeny : 0,
     },

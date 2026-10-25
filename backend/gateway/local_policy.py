@@ -1,7 +1,7 @@
 """LOCAL POLICY (stand-in): evaluates prguard.policy.yaml in-process.
 
-Exists so PRGuard can be built and tested before AgntID access. Its decisions
-are always labelled LOCAL_POLICY, never AGNTID.
+Exists so PRGuard can be built and tested without FailproofAI installed. Its
+decisions are always labelled LOCAL_POLICY, never FAILPROOFAI.
 """
 
 from __future__ import annotations
