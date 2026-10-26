@@ -23,8 +23,9 @@ which of these it improves.
 Pull Request → Orchestrator + Sandbox → 5 specialist agents → Aggregator →
 Checker → Human Gate. Every GitHub call goes agent → `ToolGateway` →
 `FailproofAIGateway` (`backend/gateway/failproofai_gw.py`) → the failproofai
-binary as a PreToolUse hook, which runs `prguard-tool-gateway` from
-`failproofai/prguard-policies.mjs` → if allowed, PRGuard's own GitHub MCP
+binary as a PreToolUse hook, which runs PRGuard's six policies (`prguard-no-repo-writes`,
+`prguard-repo-scope`, `prguard-pr-scope`, `prguard-secret-paths`, `prguard-search-scope`,
+`prguard-role-tools`) from `failproofai/prguard-policies.mjs` → if allowed, PRGuard's own GitHub MCP
 server (`prguard_mcp/server.py`), the only place the GitHub token lives.
 `team/CONTRACT.md` has the exact hook input and output.
 

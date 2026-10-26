@@ -17,16 +17,24 @@ registerHooks({
   load: (url, context, next) =>
     url === "prguard-shim:failproofai" ? { format: "module", source: SHIM, shortCircuit: true } : next(url, context),
 });
-await import("./prguard-policies.mjs");
+// argv[2]: another policy file to load (e.g. a single-policy Cloud copy); default: the local file.
+await import(process.argv[2] ? new URL(process.argv[2], `file://${process.cwd()}/`).href : "./prguard-policies.mjs");
 
-const [hook] = globalThis.__prguardHooks;
-if (globalThis.__prguardHooks.length !== 1 || hook.name !== "prguard-tool-gateway") throw new Error("expected one prguard-tool-gateway hook");
+const hooks = globalThis.__prguardHooks;
+if (!hooks.length) throw new Error("no PRGuard policy registered");
 
 const out = [];
 // A case may add top-level `payload` fields (e.g. `prguard`), as the real hook payload has them.
+// Like failproofai: every registered policy sees the call, and any deny wins.
 for (const { tool, input, payload: extra } of JSON.parse(readFileSync(0, "utf8"))) {
   const payload = { hook_event_name: "PreToolUse", tool_name: tool, tool_input: input, ...extra };
-  const { decision, reason = "" } = await hook.fn({ eventType: "PreToolUse", payload, toolName: tool, toolInput: input });
-  out.push({ decision, reason });
+  const ctx = { eventType: "PreToolUse", payload, toolName: tool, toolInput: input };
+  const denials = [];
+  for (const hook of hooks) {
+    const { decision, reason = "" } = await hook.fn(ctx);
+    if (decision === "deny") denials.push({ policy: hook.name, reason });
+  }
+  if (denials.length > 1) throw new Error(`more than one PRGuard policy denied: ${denials.map((d) => d.policy)}`);
+  out.push(denials.length ? { decision: "deny", ...denials[0] } : { decision: "allow", reason: "", policy: "" });
 }
 console.log(JSON.stringify(out));

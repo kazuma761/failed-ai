@@ -42,7 +42,7 @@ read and comment only.
 | FailproofAI feature | How PRGuard uses it |
 |---|---|
 | PreToolUse hook | Runs on every GitHub call an agent makes, as `mcp__prguard__<tool>`, with the task context supplied by the backend, not the agent |
-| Custom policy (`prguard-tool-gateway`) | Default deny; per-role tools; repo, PR and commit pinning; no secret file paths; merge, push and file writes always denied; APPROVE only after a human, each deny with a readable reason |
+| Six custom policies, one per risk | `prguard-no-repo-writes` (merge, push, file writes), `prguard-repo-scope`, `prguard-pr-scope`, `prguard-secret-paths`, `prguard-search-scope`, `prguard-role-tools` (per-role tools, APPROVE only after a human, default deny); each deny with a readable reason |
 | Fail-closed guard | Before the first call PRGuard probes the hook with a merge; unless PRGuard's own rule denies it, nothing goes through |
 | Hook activity | Every allow and deny recorded (local dashboard, FailproofAI Cloud) |
 | SDK sessions | Each review is one FailproofAI session with its tool calls and decisions, ready for Cloud audits and evaluations |

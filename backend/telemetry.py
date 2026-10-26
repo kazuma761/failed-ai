@@ -52,7 +52,7 @@ def tool_use(session_id: str, agent_id: str, tool: str, args: dict[str, Any]) ->
     """Starts a tool call and its access decision; returns the per-session unique call id."""
     call_id = uuid.uuid4().hex
     _emit("tool_use", session_id=session_id, agent_id=agent_id, tool_name=tool, tool_call_id=call_id, input=args)
-    _emit("hook_triggered", session_id=session_id, agent_id=agent_id, hook_name="prguard-tool-gateway",
+    _emit("hook_triggered", session_id=session_id, agent_id=agent_id, hook_name="prguard-policies",
           hook_id=call_id, trigger_event="PreToolUse", input={"tool": tool, "args": args})
     return call_id
 
@@ -61,7 +61,7 @@ def decision(session_id: str, agent_id: str, call_id: str, verdict: str, enforce
              policy: str = "") -> None:
     """The gateway decided (ALLOW/DENY), or could not decide (verdict ERROR -> outcome failed)."""
     output = {"decision": verdict, "enforcer": enforcer, "reason": reason, "policy": policy}
-    _emit("hook_completed", session_id=session_id, agent_id=agent_id, hook_name="prguard-tool-gateway",
+    _emit("hook_completed", session_id=session_id, agent_id=agent_id, hook_name="prguard-policies",
           hook_id=call_id, outcome="failed" if verdict == "ERROR" else "success", output=output,
           error=reason if verdict == "ERROR" else None)
 

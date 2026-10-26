@@ -1,9 +1,11 @@
-// PRGuard's access policy for FailproofAI: a mirror of PolicyEngine.evaluate
-// (backend/gateway/policy_engine.py) over backend/policies/prguard.policy.yaml.
-// Same order, rule names and reason text; tests/test_failproofai_policy.py keeps them in sync.
+// PRGuard's access policies for FailproofAI: a mirror of PolicyEngine.evaluate
+// (backend/gateway/policy_engine.py) over backend/policies/prguard.policy.yaml, registered as
+// six policies (POLICIES below), one per kind of risk. Same order, rule names and reason text;
+// tests/test_failproofai_policy.py keeps them in sync.
 //
 // The gateway sends each PRGuard tool call as `mcp__prguard__<tool>` with the trusted task
-// in tool_input._prguard. Copied to .failproofai/policies/ by scripts/failproofai_setup.sh.
+// in tool_input._prguard. Copied to .failproofai/policies/ by scripts/failproofai_setup.sh;
+// scripts/publish_prguard_policies.sh publishes one single-policy copy per name to FailproofAI Cloud.
 import { customPolicies, allow, deny } from "failproofai";
 
 const PREFIX = "mcp__prguard__";
@@ -158,36 +160,67 @@ export function evaluate(agentId, task, tool, args) {
 
 const say = (rule, reason) => `PRGuard policy [${rule}]: ${reason}`;
 
-customPolicies.add({
-  name: "prguard-tool-gateway",
-  description: "PRGuard: just-for-task access for PRGuard's agents on the prguard GitHub MCP server",
-  match: { events: ["PreToolUse"] },
-  fn: async (ctx) => {
-    const toolName = ctx.toolName ?? ctx.payload?.tool_name;
-    if (typeof toolName !== "string" || !toolName.toLowerCase().startsWith(PREFIX)) return allow();  // not ours
-    try {
-      const input = ctx.toolInput ?? ctx.payload?.tool_input ?? {};
-      // Python gets these types from TaskContext; a gap here would let e.g. ref="None" match a missing head_sha.
-      const valid = (task) => task && typeof task === "object" && typeof task.agent_id === "string"
-        && typeof task.repo === "string" && Number.isInteger(task.pr_number) && typeof task.head_sha === "string"
-        && typeof task.human_approved === "boolean";
-      // The daemon path does not always keep `_prguard` in tool_input, so the gateway sends the task three ways.
-      // Every carrier that is present must be a valid task and the same one: a mismatch means tampering.
-      const carried = [input._prguard, input.prguard_task, ctx.payload?.prguard].filter((t) => t !== undefined);
-      const canon = (t) => JSON.stringify(Object.entries(t).sort(([a], [b]) => (a < b ? -1 : 1)));
-      const task = carried.every(valid) && new Set(carried.map(canon)).size === 1 ? carried[0] : null;
-      if (carried.length > 1 && !task && carried.some(valid))
-        return deny(say("default", "conflicting PRGuard task context"));
-      if (!task) {
-        const seen = `tool_input keys: ${Object.keys(input).join(",")}; payload keys: ${Object.keys(ctx.payload ?? {}).join(",")}`;
-        return deny(say("default", `no PRGuard task context (${seen})`));
-      }
-      const { _prguard, prguard_task, ...args } = input;
-      const [allowed, reason, rule] = evaluate(task.agent_id, task, toolName.slice(PREFIX.length), args);
-      // allow() with a reason reaches the agent as an instruct note; PRGuard's policy never instructs.
-      return allowed ? allow() : deny(say(rule, reason));
-    } catch {
-      return deny(say("default", "policy error"));
+// The whole decision for one call: null = allow, else {rule, reason} for the deny.
+export function decide(ctx) {
+  const toolName = ctx.toolName ?? ctx.payload?.tool_name;
+  if (typeof toolName !== "string" || !toolName.toLowerCase().startsWith(PREFIX)) return null;  // not ours
+  try {
+    const input = ctx.toolInput ?? ctx.payload?.tool_input ?? {};
+    // Python gets these types from TaskContext; a gap here would let e.g. ref="None" match a missing head_sha.
+    const valid = (task) => task && typeof task === "object" && typeof task.agent_id === "string"
+      && typeof task.repo === "string" && Number.isInteger(task.pr_number) && typeof task.head_sha === "string"
+      && typeof task.human_approved === "boolean";
+    // The daemon path does not always keep `_prguard` in tool_input, so the gateway sends the task three ways.
+    // Every carrier that is present must be a valid task and the same one: a mismatch means tampering.
+    const carried = [input._prguard, input.prguard_task, ctx.payload?.prguard].filter((t) => t !== undefined);
+    const canon = (t) => JSON.stringify(Object.entries(t).sort(([a], [b]) => (a < b ? -1 : 1)));
+    const task = carried.every(valid) && new Set(carried.map(canon)).size === 1 ? carried[0] : null;
+    if (carried.length > 1 && !task && carried.some(valid))
+      return { rule: "default", reason: "conflicting PRGuard task context" };
+    if (!task) {
+      const seen = `tool_input keys: ${Object.keys(input).join(",")}; payload keys: ${Object.keys(ctx.payload ?? {}).join(",")}`;
+      return { rule: "default", reason: `no PRGuard task context (${seen})` };
     }
-  },
-});
+    const { _prguard, prguard_task, ...args } = input;
+    const [allowed, reason, rule] = evaluate(task.agent_id, task, toolName.slice(PREFIX.length), args);
+    return allowed ? null : { rule, reason };
+  } catch {
+    return { rule: "default", reason: "policy error" };
+  }
+}
+
+// One FailproofAI policy per kind of risk, so each shows (and counts) on its own in FailproofAI.
+// Every deny belongs to exactly one of them, so together they decide exactly like the single rule set.
+export const POLICIES = [
+  { name: "prguard-no-repo-writes", owns: (d) => d.rule === "always_deny.tools",
+    description: "PRGuard: agents never merge, push, or create, change or delete files" },
+  { name: "prguard-repo-scope", owns: (d) => d.rule === "always_deny.cross_repo",
+    description: "PRGuard: agents touch only the repository under review" },
+  { name: "prguard-pr-scope", owns: (d) => d.rule === "task_scope.pull_number",
+    description: "PRGuard: agents act only on the pull request under review" },
+  { name: "prguard-secret-paths", owns: (d) => d.reason.includes(" matches denied pattern "),
+    description: "PRGuard: agents never read .env files, secrets/ or private keys, however the path is spelled" },
+  { name: "prguard-search-scope", owns: (d) => d.reason.startsWith("query uses the search qualifier "),
+    description: "PRGuard: code search cannot reach other repositories, orgs or users" },
+  { name: "prguard-role-tools", owns: () => true,  // the default deny: anything the others do not own
+    description: "PRGuard: each agent uses only its role's tools; APPROVE only after a human; default deny" },
+];
+
+export const ownerOf = (d) => POLICIES.find((p) => p.owns(d)).name;
+
+// null = register all six (the local file). The Cloud publish script stamps one name per copy.
+const ONLY = null;
+
+for (const policy of POLICIES) {
+  if (ONLY !== null && policy.name !== ONLY) continue;
+  customPolicies.add({
+    name: policy.name,
+    description: policy.description,
+    match: { events: ["PreToolUse"] },
+    fn: async (ctx) => {
+      const d = decide(ctx);
+      // allow() with a reason reaches the agent as an instruct note; PRGuard's policies never instruct.
+      return d && ownerOf(d) === policy.name ? deny(say(d.rule, d.reason)) : allow();
+    },
+  });
+}
