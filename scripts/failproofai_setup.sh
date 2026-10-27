@@ -9,6 +9,6 @@ cp failproofai/prguard-policies.mjs .failproofai/policies/prguard-policies.mjs
 echo "Installed .failproofai/policies/prguard-policies.mjs"
 echo
 echo "Next:"
-echo "  failproofai policies --list            # expect prguard-tool-gateway"
+echo "  failproofai policies --list            # expect the six prguard-* policies"
 echo "  set ENFORCER=FAILPROOFAI in .env, then restart the backend"
 echo "  .venv/bin/python scripts/failproofai_check.py"

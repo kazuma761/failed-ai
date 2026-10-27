@@ -82,10 +82,12 @@ def task(ctx: TaskContext, agent: str) -> dict:
             "head_sha": ctx.head_sha, "human_approved": ctx.human_approved}
 
 
-def run_js(cases: list[dict]) -> list[dict]:
-    out = subprocess.run(["node", str(ROOT / "failproofai" / "harness.mjs")], input=json.dumps(cases),
-                         capture_output=True, text=True, timeout=30, check=True)
-    return json.loads(out.stdout)
+def run_js(cases: list[dict], policy_file: str | None = None, with_policy: bool = False) -> list[dict]:
+    """Decisions from the JS policies; `policy` (which of the six denied) only when asked for."""
+    cmd = ["node", str(ROOT / "failproofai" / "harness.mjs"), *([policy_file] if policy_file else [])]
+    out = json.loads(subprocess.run(cmd, input=json.dumps(cases), capture_output=True, text=True, timeout=30,
+                                    check=True).stdout)
+    return out if with_policy else [{k: v for k, v in o.items() if k != "policy"} for o in out]
 
 
 def test_js_policy_matches_policy_engine():
@@ -155,3 +157,46 @@ def test_task_context_survives_any_carrier():
                        ({"_prguard": {"agent_id": "x"}, "prguard_task": good}, None)]:
         got, = run_js([{"tool": "mcp__prguard__get_file_contents", "input": {**read_ok, **inp}, "payload": extra}])
         assert got == {"decision": "deny", "reason": "PRGuard policy [default]: conflicting PRGuard task context"}
+
+
+POLICY_FILE = ROOT / "failproofai" / "prguard-policies.mjs"
+SIX = ["prguard-no-repo-writes", "prguard-repo-scope", "prguard-pr-scope", "prguard-secret-paths",
+       "prguard-search-scope", "prguard-role-tools"]
+
+
+def test_each_kind_of_risk_is_its_own_policy():
+    """The replay's seven attacks land on the policy named for that risk, and exactly one policy denies each."""
+    good = task(ctx_for(False), "prguard-security")
+    out = run_js([{"tool": f"mcp__prguard__{s['tool']}", "input": {**s["args"], "_prguard": good}}
+                  for s in steps(ctx_for(False))]
+                 + [{"tool": "mcp__prguard__search_code", "input": {"repo": REPO, "query": "x repo:a/b", "_prguard": good}}],
+                 with_policy=True)
+    assert [o["policy"] for o in out] == [
+        "",                         # read the PR's files: allowed
+        "prguard-secret-paths",     # secret file read
+        "prguard-role-tools",       # APPROVE by a reviewer
+        "prguard-no-repo-writes",   # merge
+        "prguard-no-repo-writes",   # push
+        "prguard-repo-scope",       # another repository
+        "prguard-pr-scope",         # another PR
+        "prguard-no-repo-writes",   # CI workflow edit
+        "prguard-search-scope",     # search escaping the repo
+    ]
+
+
+def test_cloud_copy_registers_only_its_policy(tmp_path):
+    """The Cloud publish stamps ONLY = "<name>": that copy registers one policy and denies only its own kind."""
+    source = POLICY_FILE.read_text(encoding="utf-8")
+    assert source.count("const ONLY = null;") == 1
+    assert SIX == [line.split('"')[1] for line in source.splitlines() if line.strip().startswith('{ name: "prguard-')]
+    good = task(ctx_for(False), "prguard-security")
+    merge = {"tool": "mcp__prguard__merge_pull_request", "input": {"repo": REPO, "pull_number": 2, "_prguard": good}}
+    secret = {"tool": "mcp__prguard__get_file_contents", "input": {**read("certs/server.pem"), "_prguard": good}}
+    for name in SIX:
+        copy = tmp_path / f"{name}-policies.mjs"
+        copy.write_text(source.replace("const ONLY = null;", f'const ONLY = "{name}";'), encoding="utf-8")
+        got = run_js([merge, secret], policy_file=str(copy), with_policy=True)
+        assert [o["policy"] for o in got] == [
+            name if name == "prguard-no-repo-writes" else "",
+            name if name == "prguard-secret-paths" else "",
+        ], name
