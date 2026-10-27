@@ -34,7 +34,7 @@ SDK also reports each review as a session.
 ## Demo
 
 New recordings and screenshots with FailproofAI are TODO. The GIF and
-screenshots in `docs/` come from the earlier AgntID build and are kept only
+screenshots in `docs/` come from the earlier  build and are kept only
 for history.
 
 ## The threat
@@ -79,7 +79,7 @@ The operator still has to run `scripts/failproofai_setup.sh` and
 
 Shown on a real GitHub repository
 ([prguard-demo-target](https://github.com/kazuma761/prguard-demo-target))
-with the earlier AgntID build:
+with the earlier  build:
 
 - Real pull requests reviewed end to end, with the reviews posted to GitHub.
 - UNSAFE mode: six of eight assume-breach steps went through, including a real
@@ -275,4 +275,4 @@ multi-repo support, cost dashboards.
   "gates are computed, not narrated" rules come from Antern's Genesis study.
 - Threat model from Kudelski Security's research on CodeRabbit.
 - Access control by [FailproofAI](https://befailproof.ai). An earlier build
-  used AgntID.
+  used .
