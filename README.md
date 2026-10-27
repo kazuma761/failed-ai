@@ -33,9 +33,7 @@ SDK also reports each review as a session.
 
 ## Demo
 
-New recordings and screenshots with FailproofAI are TODO. The GIF and
-screenshots in `docs/` come from the earlier  build and are kept only
-for history.
+Recordings and screenshots are TODO.
 
 ## The threat
 
@@ -76,16 +74,6 @@ unlocked everything.
 FailproofAI enforcement is **built and tested offline, not yet verified live**.
 The operator still has to run `scripts/failproofai_setup.sh` and
 `scripts/failproofai_check.py` (see [FailproofAI](#failproofai) below).
-
-Shown on a real GitHub repository
-([prguard-demo-target](https://github.com/kazuma761/prguard-demo-target))
-with the earlier  build:
-
-- Real pull requests reviewed end to end, with the reviews posted to GitHub.
-- UNSAFE mode: six of eight assume-breach steps went through, including a real
-  merge and a real push.
-- Reviews take about 15 seconds and half a cent on cheap models
-  (`openai/gpt-oss-120b` reviewers, `google/gemini-2.5-flash-lite` checker).
 
 What the offline tests show for GUARDED mode with PRGuard's policy: seven of
 eight replay steps denied (only the legitimate read is allowed), including the
@@ -274,5 +262,4 @@ multi-repo support, cost dashboards.
   Pull-Request Review Agent" by Ayush Singh. The "maker is never checker" and
   "gates are computed, not narrated" rules come from Antern's Genesis study.
 - Threat model from Kudelski Security's research on CodeRabbit.
-- Access control by [FailproofAI](https://befailproof.ai). An earlier build
-  used .
+- Access control by [FailproofAI](https://befailproof.ai).

@@ -114,5 +114,4 @@ reviewer is never reviewing its own PR.
   `.venv/bin/python -m pytest -q` before saying something works.
 - Do not build: vector search, queues, user accounts, a GitHub App install
   flow, multi-repo support, cost dashboards.
-- `agntid-docs/` is the old vendor's login-gated documentation. Do not commit
-  or publish it.
+- Do not commit or publish third-party login-gated documentation.

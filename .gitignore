@@ -7,8 +7,6 @@ runs/
 frontend/node_modules/
 frontend/dist/
 .DS_Store
-agntid-docs/
-agntid/.env
 .demo_baseline
 !demo_target/.env
 .claude/
